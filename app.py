@@ -1,6 +1,24 @@
 import os, secrets, string
 from datetime import datetime
 
+def _load_secrets():
+    if os.path.exists("/etc/secrets"):
+        for f in os.listdir("/etc/secrets"):
+            fp = os.path.join("/etc/secrets", f)
+            if os.path.isfile(fp):
+                with open(fp) as fh:
+                    os.environ.setdefault(f, fh.read().strip())
+    env_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), ".env")
+    if os.path.exists(env_path):
+        with open(env_path) as fh:
+            for line in fh:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+
+_load_secrets()
+
 from flask import (
     Flask, render_template, request, jsonify,
     session, redirect, url_for, flash
@@ -9,10 +27,13 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(32)
+app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(BASE_DIR, 'instance', 'sakura.db')}"
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "DATABASE_URL",
+    f"sqlite:///{os.path.join(BASE_DIR, 'instance', 'sakura.db')}"
+)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
@@ -41,7 +62,7 @@ def _ensure_admin_exists():
     with app.app_context():
         db.create_all()
         if Admin.query.count() == 0:
-            password = "admin123"
+            password = os.environ.get("ADMIN_PASSWORD", "admin123")
             admin = Admin(password_hash=generate_password_hash(password))
             db.session.add(admin)
             db.session.commit()
